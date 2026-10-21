@@ -15,14 +15,14 @@ export function confirmationError(search: string, hash: string) {
     || errorCode === 'code_verifier_not_found'
     || /code[_ ]verifier|flow[_ ]state|pkce/i.test(error ?? '')
   ) {
-    return 'Tautan dibuka di browser atau perangkat berbeda, sehingga proses verifikasi tidak dapat diselesaikan. Akun mungkin sudah terverifikasi; coba login terlebih dahulu. Jika belum bisa, gunakan formulir ini untuk meminta tautan baru dan buka tautan baru di browser ini.';
+    return 'Verifikasi lama gagal karena PKCE verifier tidak tersedia. Ini dapat terjadi jika tautan dibuka di browser/perangkat lain atau pemindai email membuka tautan lebih dulu. Coba login terlebih dahulu; jika akun belum aktif, minta email konfirmasi baru dan gunakan tautan terbarunya.';
   }
   if (errorCode === 'otp_expired' || /expired|invalid|already used/i.test(error ?? '')) {
     return 'Tautan verifikasi tidak valid, sudah digunakan, atau kedaluwarsa. Minta email konfirmasi baru.';
   }
   if (error) return 'Verifikasi email belum berhasil. Periksa email atau minta tautan konfirmasi baru.';
   if (query.has('code')) {
-    return 'Tautan dibuka di browser atau perangkat berbeda, sehingga kode verifikasi tidak tersedia. Akun mungkin sudah terverifikasi; coba login terlebih dahulu. Jika belum bisa, gunakan formulir ini untuk meminta tautan baru dan buka tautan baru di browser ini.';
+    return 'Kode verifikasi lama tidak dapat diselesaikan. Ini dapat terjadi jika tautan dibuka di browser/perangkat lain atau pemindai email membuka tautan lebih dulu. Coba login terlebih dahulu; jika akun belum aktif, minta email konfirmasi baru.';
   }
   return 'Sesi verifikasi tidak ditemukan. Buka tautan dari email atau minta email konfirmasi baru.';
 }

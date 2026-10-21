@@ -247,7 +247,7 @@ Periksa keadaan database target sebelum menjalankan migrasi. Baseline tidak bole
 Untuk situs produksi di `https://<domain-produksi>`, atur Supabase **Authentication → URL Configuration** sebagai berikut:
 
 - **Site URL:** `https://<domain-produksi>`
-- **Redirect URLs:** `https://<domain-produksi>/auth/callback` dan `https://<domain-produksi>/reset-password`
+- **Redirect URLs:** `https://<domain-produksi>/auth/callback`, `https://<domain-produksi>/auth/confirm`, dan `https://<domain-produksi>/reset-password`
 
 Environment variables pada hosting:
 
@@ -267,9 +267,9 @@ Environment variables pada hosting:
 
 Vercel yang dikonfigurasi dengan `vercel.json` di repository ini hanya membangun frontend statis (`dist`), sehingga frontend membutuhkan dua variabel `VITE_*` di atas. Variabel server-only hanya perlu diisi bila Express/API/cron terkait benar-benar dijalankan pada hosting runtime terpisah. Jangan pernah memberi prefix `VITE_` pada secret.
 
-Untuk alur email, **Authentication → SMTP Settings** harus memakai custom SMTP untuk pendaftar umum; **Providers → Email** harus mengaktifkan email/password dan konfirmasi; template konfirmasi tetap memakai `{{ .ConfirmationURL }}`. Di **Authentication → Logs**, `Email address not authorized` biasanya berarti SMTP bawaan menolak alamat non-anggota, `over_email_send_rate_limit` berarti kuota terlampaui, error SMTP/auth berarti server SMTP menolak/gagal, dan event accepted/delivered harus ditindaklanjuti dengan log delivery/bounce provider serta folder Spam/Quarantine Gmail. SMTP bawaan hanya mengirim ke alamat yang diotorisasi dan saat ini memiliki batas sekitar 2 email per jam; kuota dapat berubah.
+Untuk alur email, **Authentication → SMTP Settings** harus memakai custom SMTP untuk pendaftar umum; **Providers → Email** harus mengaktifkan email/password dan konfirmasi. Template **Confirm signup** perlu memakai tautan `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup`, dan template **Reset Password** memakai tautan dengan `type=recovery`. Di **Authentication → Logs**, `Email address not authorized` biasanya berarti SMTP bawaan menolak alamat non-anggota, `over_email_send_rate_limit` berarti kuota terlampaui, error SMTP/auth berarti server SMTP menolak/gagal, dan event accepted/delivered harus ditindaklanjuti dengan log delivery/bounce provider serta folder Spam/Quarantine Gmail. SMTP bawaan hanya mengirim ke alamat yang diotorisasi dan saat ini memiliki batas sekitar 2 email per jam; kuota dapat berubah.
 
-Untuk lokal, tambahkan `http://localhost:3000/auth/callback` dan `http://localhost:3000/reset-password` ke Redirect URLs. `npm run dev` menjalankan server Express pada port `PORT` atau 3000 (default). Vite di `vite.config.ts` juga mulai dari 3000, tetapi `strictPort: false` membuatnya memilih port berikutnya jika port tersebut sedang dipakai; ketika Express sudah memakai 3000, Vite biasanya berjalan di 3001, jadi tambahkan dua path callback/reset di origin tersebut jika memakai `npx vite`.
+Untuk lokal, tambahkan `http://localhost:3000/auth/callback`, `http://localhost:3000/auth/confirm`, dan `http://localhost:3000/reset-password` ke Redirect URLs. Tambahkan juga path yang sama untuk port 3001 jika origin tersebut dipakai. Permintaan reset mengarahkan ke `/auth/confirm` pada origin halaman yang meminta email. Untuk template Recovery Supabase, gunakan tautan `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery`; `RedirectTo` mengikuti origin lokal/produksi peminta reset, sedangkan `SiteURL` tetap menunjuk ke origin default project. `npm run dev` menjalankan server Express pada port `PORT` atau 3000 (default). Vite di `vite.config.ts` juga mulai dari 3000, tetapi `strictPort: false` membuatnya memilih port berikutnya jika port tersebut sedang dipakai; ketika Express sudah memakai 3000, Vite biasanya berjalan di 3001.
 
 ## Menjalankan lokal
 

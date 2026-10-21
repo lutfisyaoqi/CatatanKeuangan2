@@ -1,5 +1,6 @@
 import { Transaction, TransactionType, FilterType } from '../types/finance.js';
 import { supabase, supabaseErrorMessage } from './supabaseClient.js';
+import { logAuthDiagnostic } from './authDiagnostics.js';
 
 export interface AuthUser { id: string; name: string; email: string }
 export interface DashboardSummary {
@@ -46,6 +47,7 @@ export class ApiRequestError extends Error {
 
 const signupResendCooldownMs = 60_000;
 const signupResendTimestampKey = 'catatuang.signup-confirmation-sent-at';
+const recoveryRequestOriginKey = 'catatuang.password-recovery-request-origin';
 
 export function signupResendCooldownSeconds() {
   const sentAt = Number(window.localStorage.getItem(signupResendTimestampKey));
@@ -138,7 +140,7 @@ export const apiService = {
   async register(name: string, email: string, password: string, confirmPassword: string) {
     if (password !== confirmPassword) throw new ApiRequestError('Konfirmasi password tidak sama.', 400);
     const { data, error } = await supabase.auth.signUp({
-      email, password, options: { data: { name }, emailRedirectTo: authRedirectUrl('/auth/callback') },
+      email, password, options: { data: { name }, emailRedirectTo: authRedirectUrl('/auth/confirm') },
     });
     if (error) throwSupabaseError(error);
     if (!data.session) window.localStorage.setItem(signupResendTimestampKey, String(Date.now()));
@@ -153,7 +155,7 @@ export const apiService = {
       throw new ApiRequestError(`Tunggu ${cooldownSeconds} detik sebelum meminta email konfirmasi lagi.`, 429);
     }
     const { error } = await supabase.auth.resend({
-      type: 'signup', email, options: { emailRedirectTo: authRedirectUrl('/auth/callback') },
+      type: 'signup', email, options: { emailRedirectTo: authRedirectUrl('/auth/confirm') },
     });
     if (error) throwSupabaseError(error);
     window.localStorage.setItem(signupResendTimestampKey, String(Date.now()));
@@ -164,25 +166,26 @@ export const apiService = {
     if (error) throwSupabaseError(error);
   },
   async requestPasswordReset(email: string) {
+    const redirectTo = authRedirectUrl('/auth/confirm');
+    logAuthDiagnostic('apiService', 'requestPasswordReset', {
+      origin: window.location.origin,
+      redirectOrigin: new URL(redirectTo).origin,
+      redirectPath: new URL(redirectTo).pathname,
+    });
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: authRedirectUrl('/reset-password'),
+      redirectTo,
     });
     if (error) {
       window.localStorage.removeItem('catatuang.password-recovery-requested-at');
+      window.localStorage.removeItem(recoveryRequestOriginKey);
       throwSupabaseError(error);
     }
     window.localStorage.setItem('catatuang.password-recovery-requested-at', String(Date.now()));
+    window.localStorage.setItem(recoveryRequestOriginKey, window.location.origin);
     return { message: 'Jika email terdaftar, tautan pemulihan akan segera dikirim.' };
   },
-  async resetPassword(accessToken: string, refreshToken: string, newPassword: string, confirmPassword: string) {
+  async resetPassword(newPassword: string, confirmPassword: string) {
     if (newPassword !== confirmPassword) throw new ApiRequestError('Konfirmasi password tidak sama.', 400);
-    if (!accessToken || !refreshToken) {
-      throw new ApiRequestError('Sesi pemulihan tidak ditemukan. Minta tautan pemulihan baru.', 401);
-    }
-    const { data, error: sessionError } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-    if (sessionError || !data.user) {
-      throwSupabaseError(sessionError ?? { message: 'Sesi pemulihan tidak ditemukan. Minta tautan pemulihan baru.', status: 401 });
-    }
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throwSupabaseError(error);
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });

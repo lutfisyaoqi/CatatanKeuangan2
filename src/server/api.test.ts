@@ -9,11 +9,12 @@ const previousSupabaseUrl = process.env.VITE_SUPABASE_URL;
 const previousSupabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 process.env.VITE_SUPABASE_URL = 'https://test-project.supabase.co';
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'test-publishable-key';
-const [{ apiService, signupResendCooldownSeconds }, { supabase }, { confirmationError }, { completePasswordReset }] = await Promise.all([
+const [{ apiService, signupResendCooldownSeconds }, { supabase }, { confirmationError }, { completePasswordReset, recoveryLinkError, recoverySessionError }, { confirmRecoveryOtp, confirmOtpOnce, confirmationOtpError }] = await Promise.all([
   import('../services/apiService.js'),
   import('../services/supabaseClient.js'),
   import('../pages/AuthCallbackPage.js'),
   import('../pages/PasswordResetPage.js'),
+  import('../pages/AuthConfirmPage.js'),
 ]);
 if (previousSupabaseUrl === undefined) delete process.env.VITE_SUPABASE_URL;
 else process.env.VITE_SUPABASE_URL = previousSupabaseUrl;
@@ -64,29 +65,140 @@ test('signup confirmation resend enforces a one-minute cooldown', async (context
 
 test('auth callback explains expired links and missing PKCE browser state', () => {
   assert.match(confirmationError('?error_code=otp_expired', ''), /sudah digunakan, atau kedaluwarsa/i);
-  assert.match(confirmationError('?error=flow_state_not_found', ''), /browser atau perangkat berbeda/i);
-  assert.match(confirmationError('?code=single-use-code', ''), /akun mungkin sudah terverifikasi/i);
+  assert.match(confirmationError('?error=flow_state_not_found', ''), /PKCE verifier.*browser\/perangkat lain.*login terlebih dahulu/i);
+  assert.match(confirmationError('?code=single-use-code', ''), /login terlebih dahulu/i);
   assert.match(confirmationError('', '#access_token=token&type=signup'), /Sesi verifikasi tidak ditemukan/i);
 });
 
 test('signup and recovery redirects match registered application routes', async () => {
-  const [serviceSource, appSource, clientSource] = await Promise.all([
+  const [serviceSource, appSource, clientSource, resetPageSource, confirmPageSource] = await Promise.all([
     readFile(new URL('../services/apiService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../App.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../services/supabaseClient.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../pages/PasswordResetPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../pages/AuthConfirmPage.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(serviceSource, /emailRedirectTo:\s*authRedirectUrl\('\/auth\/callback'\)/);
-  assert.match(serviceSource, /redirectTo:\s*authRedirectUrl\('\/reset-password'\)/);
+  assert.match(serviceSource, /emailRedirectTo:\s*authRedirectUrl\('\/auth\/confirm'\)/);
+  assert.match(serviceSource, /type:\s*'signup',\s*email,\s*options:\s*\{\s*emailRedirectTo:\s*authRedirectUrl\('\/auth\/confirm'\)/);
+  assert.match(serviceSource, /const redirectTo = authRedirectUrl\('\/auth\/confirm'\)/);
+  assert.match(serviceSource, /resetPasswordForEmail\(email,\s*\{\s*redirectTo,/);
+  assert.match(serviceSource, /return new URL\(path, window\.location\.origin\)\.toString\(\)/);
   assert.match(appSource, /path="\/auth\/callback"/);
+  assert.match(appSource, /path="\/auth\/confirm"/);
   assert.match(appSource, /path="\/reset-password"/);
   assert.match(clientSource, /persistSession:\s*true/);
   assert.match(clientSource, /detectSessionInUrl:\s*true/);
   assert.match(clientSource, /flowType:\s*'pkce'/);
+  assert.doesNotMatch(resetPageSource, /exchangeCodeForSession/);
+  assert.match(confirmPageSource, /type === 'recovery'/);
+  assert.match(confirmPageSource, /token_hash: tokenHash, type: 'recovery'/);
+  assert.match(confirmPageSource, /onClick=\{\(\) => void handleRecoveryContinue\(\)\}/);
+  assert.match(confirmPageSource, /if \(!isSignupLink \|\| attempted\.current\) return/);
+  assert.match(confirmPageSource, /confirmOtpOnce\(\s*tokenHash,\s*'signup'/);
+  assert.match(confirmPageSource, /disabled=\{pending \|\| attempted\.current\}/);
+  assert.match(confirmPageSource, /Akun Anda berhasil dibuat/);
+  assert.match(confirmPageSource, /Memverifikasi akun\.\.\./);
 });
 
-test('successful recovery clears the session before navigating to login with success state', async (context) => {
+test('password recovery errors are classified from query and hash parameters', () => {
+  assert.match(recoveryLinkError('?error_code=otp_expired', '') ?? '', /kedaluwarsa/i);
+  assert.match(recoveryLinkError('?error_code=otp_expired', '') ?? '', /otp_expired/);
+  assert.match(recoveryLinkError('', '#error_description=Recovery+code+already+used') ?? '', /sudah digunakan/i);
+  assert.match(recoveryLinkError('?error=code_verifier_not_found', '') ?? '', /browser atau perangkat berbeda/i);
+  assert.match(recoveryLinkError('', '#error_description=flow_state_not_found') ?? '', /browser atau perangkat berbeda/i);
+  assert.match(recoverySessionError(false), /Sesi pemulihan tidak ditemukan/i);
+  assert.match(recoverySessionError(true), /SDK tidak mendapatkan sesi/i);
+  assert.equal(recoveryLinkError('', ''), null);
+});
+
+test('OTP verification only runs on explicit continuation and only once', async (context) => {
   const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const localStorageValues = new Map([['catatuang.password-recovery-requested-at', '123']]);
+  const localStorageValues = new Map<string, string>();
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key: string) => localStorageValues.get(key) ?? null,
+        setItem: (key: string, value: string) => localStorageValues.set(key, value),
+        removeItem: (key: string) => localStorageValues.delete(key),
+      },
+    },
+  });
+  context.after(() => {
+    if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+    else Reflect.deleteProperty(globalThis, 'window');
+  });
+
+  let verificationCalls = 0;
+  context.mock.method(supabase.auth, 'verifyOtp', async (params: Parameters<typeof supabase.auth.verifyOtp>[0]) => {
+    verificationCalls++;
+    assert.deepEqual(params, { token_hash: 'test-token-hash', type: 'recovery' });
+    return { data: { user: testAuthUser, session: {} }, error: null } as never;
+  });
+
+  const attempted = { current: false };
+  const calls: string[] = [];
+  assert.equal(verificationCalls, 0);
+  const verifyOtp = supabase.auth.verifyOtp.bind(supabase.auth);
+  const first = await confirmRecoveryOtp(
+    'test-token-hash',
+    attempted,
+    verifyOtp,
+    (active) => { calls.push(`recoveryMode:${active}`); },
+    (path, options) => { calls.push(`navigate:${path}:${options.replace}`); },
+  );
+  const second = await confirmRecoveryOtp(
+    'test-token-hash',
+    attempted,
+    verifyOtp,
+    () => { calls.push('unexpected recovery mode'); },
+    () => { calls.push('unexpected navigation'); },
+  );
+
+  assert.equal(verificationCalls, 1);
+  assert.equal(first.error, null);
+  assert.equal(second.error, null);
+  assert.deepEqual(calls, ['recoveryMode:true', 'navigate:/reset-password:true']);
+  assert.equal(localStorageValues.get('catatuang.password-recovery-active'), 'true');
+});
+
+test('signup OTP verification is invoked automatically once and preserves success UI state', async (context) => {
+  let verificationCalls = 0;
+  context.mock.method(supabase.auth, 'verifyOtp', async (params: Parameters<typeof supabase.auth.verifyOtp>[0]) => {
+    verificationCalls++;
+    assert.deepEqual(params, { token_hash: 'signup-token-hash', type: 'signup' });
+    return { data: { user: testAuthUser, session: {} }, error: null } as never;
+  });
+
+  const attempted = { current: false };
+  const verifyOtp = supabase.auth.verifyOtp.bind(supabase.auth);
+  const result = await confirmOtpOnce('signup-token-hash', 'signup', attempted, verifyOtp);
+  const strictModeRepeat = await confirmOtpOnce('signup-token-hash', 'signup', attempted, verifyOtp);
+
+  assert.equal(verificationCalls, 1);
+  assert.deepEqual(result, { error: null, hasSession: true });
+  assert.equal(strictModeRepeat, null);
+});
+
+test('recovery confirmation explains expired, used, and invalid tokens distinctly', () => {
+  assert.match(confirmationOtpError('recovery', { code: 'otp_expired' }), /kedaluwarsa/i);
+  assert.match(confirmationOtpError('recovery', { code: 'otp_already_used' }), /sudah digunakan/i);
+  assert.match(confirmationOtpError('recovery', { code: 'token_hash_invalid' }), /tidak valid/i);
+});
+
+test('signup confirmation errors distinguish expired, used, and invalid tokens', () => {
+  assert.match(confirmationOtpError('signup', { code: 'otp_expired' }), /kedaluwarsa/i);
+  assert.match(confirmationOtpError('signup', { code: 'token_already_used' }), /sudah dipakai/i);
+  assert.match(confirmationOtpError('signup', { code: 'invalid_token' }), /tidak valid/i);
+  assert.match(confirmationOtpError('signup', { code: 'already_verified' }), /sudah terverifikasi.*login/i);
+});
+
+test('successful recovery updates password, signs out, and redirects to login', async (context) => {
+  const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const localStorageValues = new Map([
+    ['catatuang.password-recovery-requested-at', '123'],
+    ['catatuang.password-recovery-active', 'true'],
+  ]);
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -103,10 +215,6 @@ test('successful recovery clears the session before navigating to login with suc
   });
 
   const calls: string[] = [];
-  context.mock.method(supabase.auth, 'setSession', async () => {
-    calls.push('setSession');
-    return { data: { user: testAuthUser, session: {} }, error: null } as never;
-  });
   context.mock.method(supabase.auth, 'updateUser', async () => {
     calls.push('updateUser');
     return { data: { user: testAuthUser }, error: null } as never;
@@ -118,7 +226,6 @@ test('successful recovery clears the session before navigating to login with suc
   });
 
   await completePasswordReset(
-    { accessToken: 'recovery-access', refreshToken: 'recovery-refresh' },
     'new-password-strong',
     'new-password-strong',
     apiService.resetPassword,
@@ -131,30 +238,18 @@ test('successful recovery clears the session before navigating to login with suc
     },
   );
 
-  assert.deepEqual(calls, ['setSession', 'updateUser', 'signOut', 'recoveryMode:false', 'navigate']);
+  assert.deepEqual(calls, ['updateUser', 'signOut', 'recoveryMode:false', 'navigate']);
   assert.equal(localStorageValues.has('catatuang.password-recovery-requested-at'), false);
+  assert.equal(localStorageValues.has('catatuang.password-recovery-active'), false);
 });
 
 test('password recovery reports expired links and rejected passwords clearly', async (context) => {
-  context.mock.method(supabase.auth, 'setSession', async () => ({
-    data: { user: null, session: null },
-    error: { code: 'otp_expired', message: 'Email link is expired' },
-  }) as never);
-  await assert.rejects(
-    apiService.resetPassword('expired-access', 'expired-refresh', 'new-password-strong', 'new-password-strong'),
-    /Tautan tidak valid, sudah digunakan, atau kedaluwarsa/,
-  );
-
-  context.mock.method(supabase.auth, 'setSession', async () => ({
-    data: { user: testAuthUser, session: {} },
-    error: null,
-  }) as never);
   context.mock.method(supabase.auth, 'updateUser', async () => ({
     data: { user: null },
     error: { code: 'weak_password', message: 'Password is too weak' },
   }) as never);
   await assert.rejects(
-    apiService.resetPassword('valid-access', 'valid-refresh', 'weak-password', 'weak-password'),
+    apiService.resetPassword('weak-password', 'weak-password'),
     /Password baru terlalu lemah/,
   );
 
@@ -163,7 +258,7 @@ test('password recovery reports expired links and rejected passwords clearly', a
     error: { code: 'same_password', message: 'New password should be different from the old password' },
   }) as never);
   await assert.rejects(
-    apiService.resetPassword('valid-access', 'valid-refresh', 'same-password', 'same-password'),
+    apiService.resetPassword('same-password', 'same-password'),
     /Password baru harus berbeda dari password lama/,
   );
 });

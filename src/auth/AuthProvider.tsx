@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { apiService, AuthUser } from '../services/apiService.js';
 import { supabase } from '../services/supabaseClient.js';
+import { errorDiagnosticCode, logAuthDiagnostic, nextAuthDiagnosticMountCount } from '../services/authDiagnostics.js';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -16,18 +17,32 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
+  const renderCount = useRef(0);
+  renderCount.current++;
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryModeState] = useState(false);
   const recoveryModeRef = useRef(false);
   const sessionSyncVersion = useRef(0);
+  logAuthDiagnostic('AuthProvider', 'render', {
+    render: renderCount.current,
+    hasUser: Boolean(user),
+    loading,
+    recoveryMode,
+  });
 
   useEffect(() => {
     let active = true;
     const initialVersion = sessionSyncVersion.current;
+    logAuthDiagnostic('AuthProvider', 'mount', {
+      mount: nextAuthDiagnosticMountCount('catatuang.auth-debug.provider-mounts'),
+      navigationType: performance.getEntriesByType('navigation')[0]?.toJSON().type ?? 'unknown',
+    });
     void apiService.getSession().then(({ user: sessionUser }) => {
+      logAuthDiagnostic('AuthProvider', 'initial getSession resolved', { hasUser: Boolean(sessionUser) });
       if (active && sessionSyncVersion.current === initialVersion) setUser(sessionUser);
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      logAuthDiagnostic('AuthProvider', 'initial getSession rejected', { errorCode: errorDiagnosticCode(error) });
       if (active && sessionSyncVersion.current === initialVersion) setUser(null);
     }).finally(() => {
       if (active && sessionSyncVersion.current === initialVersion) setLoading(false);
@@ -35,6 +50,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const version = ++sessionSyncVersion.current;
+      logAuthDiagnostic('AuthProvider', 'onAuthStateChange', { event, hasSession: Boolean(session) });
       if (event === 'PASSWORD_RECOVERY') {
         recoveryModeRef.current = true;
         setRecoveryModeState(true);
@@ -56,8 +72,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       // Supabase recommends keeping network work outside the auth callback.
       window.setTimeout(() => {
         void apiService.getSession().then(({ user: sessionUser }) => {
+          logAuthDiagnostic('AuthProvider', 'event getSession resolved', { event, hasUser: Boolean(sessionUser) });
           if (active && sessionSyncVersion.current === version) setUser(sessionUser);
-        }).catch(() => {
+        }).catch((error: unknown) => {
+          logAuthDiagnostic('AuthProvider', 'event getSession rejected', {
+            event,
+            errorCode: errorDiagnosticCode(error),
+          });
           if (active && sessionSyncVersion.current === version) setUser(null);
         }).finally(() => {
           if (active && sessionSyncVersion.current === version) setLoading(false);

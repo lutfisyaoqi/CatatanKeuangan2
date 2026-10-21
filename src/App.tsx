@@ -16,6 +16,7 @@ import { AdminPage } from './pages/AdminPage.js';
 import { AdminLoginPage } from './pages/AdminLoginPage.js';
 import { PasswordResetPage } from './pages/PasswordResetPage.js';
 import { AuthCallbackPage } from './pages/AuthCallbackPage.js';
+import { AuthConfirmPage } from './pages/AuthConfirmPage.js';
 import { Header } from './components/Header.js';
 import { DashboardStats } from './components/DashboardStats.js';
 import { TransactionFilters } from './components/TransactionFilters.js';
@@ -542,6 +543,7 @@ export default function App() {
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/register" element={<AuthPage mode="register" />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route path="/auth/confirm" element={<AuthConfirmPage />} />
         <Route path="/reset-password" element={<PasswordResetPage />} />
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
