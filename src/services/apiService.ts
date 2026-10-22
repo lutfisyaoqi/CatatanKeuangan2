@@ -307,6 +307,13 @@ export const apiService = {
       subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
     }));
   },
+  async getOrCreateAdminSupportConversation(userId: string) {
+    const id = await rpc<string>('admin_create_support_conversation', { p_user_id: userId });
+    const conversations = await this.listAdminSupportConversations();
+    const conversation = conversations.find((item) => item.id === id);
+    if (!conversation) throw new ApiRequestError('Percakapan berhasil dibuat, tetapi belum dapat dimuat.', 503);
+    return conversation;
+  },
   async listSupportMessages(conversationId: string): Promise<SupportMessage[]> {
     if (!conversationId) return [];
     const { data, error } = await supabase.from('support_messages').select('id,conversation_id,sender_id,sender_role,body,created_at')

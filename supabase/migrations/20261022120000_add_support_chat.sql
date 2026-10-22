@@ -86,23 +86,68 @@ security definer
 set search_path = ''
 as $$
 begin
-  if auth.uid() is null or new.user_id <> auth.uid() then
-    raise exception 'Percakapan hanya dapat dibuat untuk akun sendiri.' using errcode = '42501';
-  end if;
-  if not public.account_is_active() then
-    raise exception 'Akun aktif diperlukan.' using errcode = '42501';
+  if auth.uid() is null then
+    raise exception 'Autentikasi diperlukan.' using errcode = '42501';
+  elsif new.user_id = auth.uid() then
+    if not public.account_is_active() then
+      raise exception 'Akun aktif diperlukan.' using errcode = '42501';
+    end if;
+  elsif coalesce(public.admin_get_my_role(), '') not in ('admin', 'support', 'owner') then
+    raise exception 'Akses admin diperlukan untuk membuat chat bagi pengguna lain.' using errcode = '42501';
   end if;
 
   select coalesce(u.name, ''), coalesce(a.email, '')
     into new.user_name, new.user_email
   from public.users u
-  left join auth.users a on a.id = u.id
+  join auth.users a on a.id = u.id
   where u.id = new.user_id;
+
+  if not found then
+    raise exception 'Akun pengguna tidak ditemukan.' using errcode = '22023';
+  end if;
 
   return new;
 end;
 $$;
 revoke all on function public.support_prepare_conversation() from public, anon, authenticated;
+
+create or replace function public.admin_create_support_conversation(p_user_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  conversation_id uuid;
+begin
+  if coalesce(public.admin_get_my_role(), '') not in ('admin', 'support', 'owner') then
+    raise exception 'Akses admin diperlukan.' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1 from public.users u
+    where u.id = p_user_id and u.account_status = 'active'
+  ) then
+    raise exception 'Pengguna tidak ditemukan atau akunnya tidak aktif.' using errcode = '22023';
+  end if;
+
+  select c.id into conversation_id
+  from public.support_conversations c
+  where c.user_id = p_user_id
+  order by c.updated_at desc
+  limit 1;
+
+  if conversation_id is null then
+    insert into public.support_conversations (user_id, subject)
+    values (p_user_id, 'Pesan admin')
+    returning id into conversation_id;
+  end if;
+
+  return conversation_id;
+end;
+$$;
+revoke all on function public.admin_create_support_conversation(uuid) from public, anon;
+grant execute on function public.admin_create_support_conversation(uuid) to authenticated;
 
 create or replace function public.support_touch_conversation()
 returns trigger

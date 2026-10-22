@@ -607,6 +607,8 @@ test('support chat migration enforces participant access and admin-only replies'
   assert.match(migration, /sender_role = 'user'[\s\S]*?public\.support_user_can_message\(conversation_id\)/i);
   assert.match(migration, /sender_role = 'admin'[\s\S]*?public\.admin_get_my_role\(\) in \('admin', 'support', 'owner'\)/i);
   assert.match(migration, /new\.sender_role = 'admin' then 'open'/i);
+  assert.match(migration, /create or replace function public\.admin_create_support_conversation\(p_user_id uuid\)[\s\S]*?coalesce\(public\.admin_get_my_role\(\), ''\) not in \('admin', 'support', 'owner'\)/i);
+  assert.match(migration, /grant execute on function public\.admin_create_support_conversation\(uuid\) to authenticated/i);
 });
 
 test('admin migration protects RLS tables and privileged RPC execution', async () => {

@@ -28,7 +28,7 @@ const sectionDetails: Record<AdminSection, { title: string; description: string 
   users: { title: 'Akun pengguna', description: 'Kelola status akun. Panel hanya menampilkan identitas dan status, bukan data keuangan.' },
   audit: { title: 'Audit log', description: 'Riwayat tindakan administratif dan hasilnya.' },
   settings: { title: 'Pengaturan layanan', description: 'Atur pengumuman untuk pengguna dan pemberitahuan pemeliharaan.' },
-  support: { title: 'Chat dukungan', description: 'Baca dan balas pesan bantuan dari pengguna CatatUang.' },
+  support: { title: 'Pesan', description: 'Pilih percakapan yang masuk atau buka chat dengan pengguna CatatUang.' },
 };
 
 const navigation: Array<{ path: string; section: AdminSection; label: string; icon: typeof LayoutDashboard }> = [
@@ -36,7 +36,7 @@ const navigation: Array<{ path: string; section: AdminSection; label: string; ic
   { path: '/admin/users', section: 'users', label: 'Akun', icon: Users },
   { path: '/admin/audit', section: 'audit', label: 'Audit Log', icon: ClipboardList },
   { path: '/admin/settings', section: 'settings', label: 'Pengaturan', icon: Wrench },
-  { path: '/admin/support', section: 'support', label: 'Chat dukungan', icon: MessageCircle },
+  { path: '/admin/messages', section: 'support', label: 'Pesan', icon: MessageCircle },
 ];
 
 const auditActions = [
@@ -150,7 +150,7 @@ export const AdminPage: React.FC = () => {
     if (path === '/admin/users') return 'users';
     if (path === '/admin/audit') return 'audit';
     if (path === '/admin/settings') return 'settings';
-    if (path === '/admin/support') return 'support';
+    if (path === '/admin/support' || path === '/admin/messages') return 'support';
     return null;
   }, [location.pathname]);
 
