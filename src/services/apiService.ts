@@ -40,6 +40,15 @@ export interface AdminSettings { announcement: string | null; maintenanceMode: b
 export interface AdminGrowthPoint { day: string; accounts: number }
 export interface AdminStorageUsage { objectCount: number; totalBytes: number }
 export interface PublicServiceStatus { announcement: string | null; maintenanceMode: boolean }
+export type SupportConversationStatus = 'open' | 'closed';
+export interface SupportConversation {
+  id: string; userId: string; subject: string; status: SupportConversationStatus;
+  createdAt: string; updatedAt: string; userName?: string; userEmail?: string;
+}
+export interface SupportMessage {
+  id: string; conversationId: string; senderId: string; senderRole: 'user' | 'admin';
+  body: string; createdAt: string;
+}
 
 export class ApiRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = 'ApiRequestError'; }
@@ -276,6 +285,62 @@ export const apiService = {
     if (readError) throwSupabaseError(readError);
     if (row?.receipt_path) await supabase.storage.from('transaction-receipts').remove([row.receipt_path]);
     const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', user.id);
+    if (error) throwSupabaseError(error);
+  },
+  async listSupportConversations(): Promise<SupportConversation[]> {
+    const user = await currentAuthUser();
+    const { data, error } = await supabase.from('support_conversations').select('id,user_id,subject,status,created_at,updated_at')
+      .eq('user_id', user.id).order('updated_at', { ascending: false });
+    if (error) throwSupabaseError(error);
+    return (data ?? []).map((row) => ({
+      id: row.id, userId: row.user_id, subject: row.subject, status: row.status,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
+  },
+  async listAdminSupportConversations(): Promise<SupportConversation[]> {
+    const { data, error } = await supabase.from('support_conversations')
+      .select('id,user_id,user_name,user_email,subject,status,created_at,updated_at')
+      .order('updated_at', { ascending: false });
+    if (error) throwSupabaseError(error);
+    return (data ?? []).map((row) => ({
+      id: row.id, userId: row.user_id, userName: row.user_name, userEmail: row.user_email,
+      subject: row.subject, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
+  },
+  async listSupportMessages(conversationId: string): Promise<SupportMessage[]> {
+    if (!conversationId) return [];
+    const { data, error } = await supabase.from('support_messages').select('id,conversation_id,sender_id,sender_role,body,created_at')
+      .eq('conversation_id', conversationId).order('created_at', { ascending: true });
+    if (error) throwSupabaseError(error);
+    return (data ?? []).map((row) => ({
+      id: row.id, conversationId: row.conversation_id, senderId: row.sender_id,
+      senderRole: row.sender_role, body: row.body, createdAt: row.created_at,
+    }));
+  },
+  async createSupportConversation(subject: string, body: string) {
+    const user = await currentAuthUser();
+    const cleanSubject = subject.trim();
+    const cleanBody = body.trim();
+    if (!cleanSubject || cleanSubject.length > 120) throw new ApiRequestError('Topik harus diisi dan maksimal 120 karakter.', 400);
+    if (!cleanBody || cleanBody.length > 4000) throw new ApiRequestError('Pesan harus diisi dan maksimal 4.000 karakter.', 400);
+    const { data, error } = await supabase.from('support_conversations')
+      .insert({ user_id: user.id, subject: cleanSubject }).select('id').single();
+    if (error) throwSupabaseError(error);
+    await this.sendSupportMessage(data.id, cleanBody, false);
+    return data.id;
+  },
+  async sendSupportMessage(conversationId: string, body: string, asAdmin: boolean) {
+    const user = await currentAuthUser();
+    const cleanBody = body.trim();
+    if (!cleanBody || cleanBody.length > 4000) throw new ApiRequestError('Pesan harus diisi dan maksimal 4.000 karakter.', 400);
+    const { error } = await supabase.from('support_messages').insert({
+      conversation_id: conversationId, sender_id: user.id,
+      sender_role: asAdmin ? 'admin' : 'user', body: cleanBody,
+    });
+    if (error) throwSupabaseError(error);
+  },
+  async updateSupportConversationStatus(conversationId: string, status: SupportConversationStatus) {
+    const { error } = await supabase.from('support_conversations').update({ status }).eq('id', conversationId);
     if (error) throwSupabaseError(error);
   },
   async updateInitialBalance(initialBalance: number) {

@@ -595,6 +595,20 @@ test('admin hardening migration removes client access to account status and admi
   assert.match(migration, /revoke all on table public\.app_settings from public, anon, authenticated/i);
 });
 
+test('support chat migration enforces participant access and admin-only replies', async () => {
+  const migration = await readFile(new URL('../../supabase/migrations/20261022120000_add_support_chat.sql', import.meta.url), 'utf8');
+  for (const table of ['support_conversations', 'support_messages']) {
+    assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`, 'i'));
+    assert.match(migration, new RegExp(`revoke all on public\\.${table} from public, anon, authenticated`, 'i'));
+  }
+  assert.match(migration, /grant select, insert on public\.support_conversations to authenticated/i);
+  assert.match(migration, /grant select, insert on public\.support_messages to authenticated/i);
+  assert.match(migration, /c\.user_id = \(select auth\.uid\(\)\)[\s\S]*?public\.account_is_active\(\)/i);
+  assert.match(migration, /sender_role = 'user'[\s\S]*?public\.support_user_can_message\(conversation_id\)/i);
+  assert.match(migration, /sender_role = 'admin'[\s\S]*?public\.admin_get_my_role\(\) in \('admin', 'support', 'owner'\)/i);
+  assert.match(migration, /new\.sender_role = 'admin' then 'open'/i);
+});
+
 test('admin migration protects RLS tables and privileged RPC execution', async () => {
   const migration = await readFile(new URL('../../supabase/migrations/20261013220000_add_admin_panel.sql', import.meta.url), 'utf8');
   for (const table of ['admin_users', 'admin_audit_logs', 'app_settings']) {

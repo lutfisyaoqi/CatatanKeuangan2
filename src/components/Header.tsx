@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wallet, Plus, Settings2, LogOut } from 'lucide-react';
+import { Wallet, Plus, Settings2, LogOut, MessageCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface HeaderProps {
@@ -36,6 +36,15 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Action Buttons */}
         <div className="flex items-center gap-2 sm:gap-3">
           <Link to="/settings/profile" className="hidden sm:inline text-sm font-medium text-slate-600 hover:text-blue-700">{userName}</Link>
+          <Link
+            to="/support"
+            title="Chat dengan admin"
+            aria-label="Chat dengan admin"
+            className="hidden h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-blue-700 sm:inline-flex sm:px-3"
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Bantuan</span>
+          </Link>
           <button
             type="button"
             onClick={onLogout}

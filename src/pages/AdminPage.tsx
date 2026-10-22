@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowDownToLine, Check, ChevronLeft, ChevronRight, ClipboardList, Database,
-  LayoutDashboard, LoaderCircle, LogOut, Menu, Megaphone, RefreshCw, Search, Shield,
+  LayoutDashboard, LoaderCircle, LogOut, Menu, Megaphone, MessageCircle, RefreshCw, Search, Shield,
   ShieldAlert, ShieldCheck, Trash2, Users, Wrench, X,
 } from 'lucide-react';
 import { Link, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider.js';
+import { AdminSupportInbox } from '../components/AdminSupportInbox.js';
 import {
   AdminActivity, AdminAuditLog, AdminGrowthPoint, AdminOverview, AdminRetention, AdminRole, AdminSettings, AdminStorageUsage,
   AdminUser, ApiRequestError, apiService,
@@ -14,7 +15,7 @@ import {
 const userPageSize = 10;
 const auditPageSize = 20;
 
-type AdminSection = 'overview' | 'users' | 'audit' | 'settings';
+type AdminSection = 'overview' | 'users' | 'audit' | 'settings' | 'support';
 type UserAction = 'disable' | 'enable' | 'delete';
 
 interface ActionDialogState {
@@ -27,6 +28,7 @@ const sectionDetails: Record<AdminSection, { title: string; description: string 
   users: { title: 'Akun pengguna', description: 'Kelola status akun. Panel hanya menampilkan identitas dan status, bukan data keuangan.' },
   audit: { title: 'Audit log', description: 'Riwayat tindakan administratif dan hasilnya.' },
   settings: { title: 'Pengaturan layanan', description: 'Atur pengumuman untuk pengguna dan pemberitahuan pemeliharaan.' },
+  support: { title: 'Chat dukungan', description: 'Baca dan balas pesan bantuan dari pengguna CatatUang.' },
 };
 
 const navigation: Array<{ path: string; section: AdminSection; label: string; icon: typeof LayoutDashboard }> = [
@@ -34,6 +36,7 @@ const navigation: Array<{ path: string; section: AdminSection; label: string; ic
   { path: '/admin/users', section: 'users', label: 'Akun', icon: Users },
   { path: '/admin/audit', section: 'audit', label: 'Audit Log', icon: ClipboardList },
   { path: '/admin/settings', section: 'settings', label: 'Pengaturan', icon: Wrench },
+  { path: '/admin/support', section: 'support', label: 'Chat dukungan', icon: MessageCircle },
 ];
 
 const auditActions = [
@@ -147,6 +150,7 @@ export const AdminPage: React.FC = () => {
     if (path === '/admin/users') return 'users';
     if (path === '/admin/audit') return 'audit';
     if (path === '/admin/settings') return 'settings';
+    if (path === '/admin/support') return 'support';
     return null;
   }, [location.pathname]);
 
@@ -439,6 +443,7 @@ export const AdminPage: React.FC = () => {
     if (section === 'users') void refreshUsers();
     if (section === 'audit') void refreshAudit();
     if (section === 'settings') void refreshSettings();
+    if (section === 'support') window.dispatchEvent(new Event('catatuang-support-refresh'));
   };
 
   return <main className="min-h-screen bg-slate-50">
@@ -446,7 +451,7 @@ export const AdminPage: React.FC = () => {
       <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-900 text-white"><Shield className="h-5 w-5" /></span>
-          <div><p className="text-sm font-bold leading-tight text-slate-900">CatatUang · Panel Admin</p><p className="mt-0.5 text-xs text-slate-500">Pengelolaan terbatas dan agregat</p></div>
+          <div><p className="text-sm font-bold leading-tight text-slate-900">CatatUang · Panel Admin</p><p className="mt-0.5 text-xs text-slate-500">Administrasi layanan dan dukungan</p></div>
         </div>
         <div className="flex min-w-0 items-center gap-2">
           <span className="max-w-[112px] truncate text-right sm:max-w-none"><span className="block truncate text-xs font-semibold text-slate-800 sm:text-sm">{user?.name || 'Admin'}</span><span className="block truncate text-[10px] text-slate-500 sm:text-xs">{user?.email} · {role}</span></span>
@@ -466,7 +471,7 @@ export const AdminPage: React.FC = () => {
         <nav aria-label="Navigasi admin" className="space-y-1">
           {navigation.map(({ path, section: navSection, label, icon: Icon }) => <NavLink key={path} to={path} end={navSection === 'overview'} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive ? 'bg-blue-50 text-blue-800' : 'text-slate-600 hover:bg-slate-50'}`}><Icon className="h-4 w-4" />{label}</NavLink>)}
         </nav>
-        <p className="mt-8 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-500">Admin tidak dapat melihat transaksi, saldo awal, foto bukti, kata sandi, atau token pengguna.</p>
+        <p className="mt-8 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-500">Admin tidak dapat melihat transaksi, saldo awal, foto bukti, kata sandi, atau token pengguna. Pesan dan identitas percakapan dukungan hanya ditampilkan di inbox chat.</p>
       </aside>
 
       <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
@@ -514,6 +519,8 @@ export const AdminPage: React.FC = () => {
           </section>
           <p className="text-xs text-slate-500">Ekspor dan kartu ringkasan hanya memuat metrik agregat anonim. Tidak ada rincian transaksi yang ditampilkan.</p>
         </div>}
+
+        {section === 'support' && <AdminSupportInbox />}
 
         {section === 'users' && <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between">

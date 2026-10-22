@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { Download, Megaphone, Wrench } from 'lucide-react';
+import { Download, Megaphone, MessageCircle, Wrench } from 'lucide-react';
 import { Transaction, TransactionType, FilterType } from './types/finance.js';
 import { BalanceStats } from './utils/calculations.js';
 import { apiService } from './services/apiService.js';
@@ -17,6 +17,7 @@ import { AdminLoginPage } from './pages/AdminLoginPage.js';
 import { PasswordResetPage } from './pages/PasswordResetPage.js';
 import { AuthCallbackPage } from './pages/AuthCallbackPage.js';
 import { AuthConfirmPage } from './pages/AuthConfirmPage.js';
+import { SupportPage } from './pages/SupportPage.js';
 import { Header } from './components/Header.js';
 import { DashboardStats } from './components/DashboardStats.js';
 import { TransactionFilters } from './components/TransactionFilters.js';
@@ -291,6 +292,9 @@ function DashboardPage() {
             <p className="mt-1 text-sm text-slate-500">Ringkasan keuangan pribadimu.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <Link to="/support" className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-xs transition-colors hover:bg-slate-50">
+              <MessageCircle className="h-4 w-4" />Chat admin
+            </Link>
             <button
               type="button"
               onClick={() => void handleExportFinancialSummary()}
@@ -547,6 +551,7 @@ export default function App() {
         <Route path="/reset-password" element={<PasswordResetPage />} />
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/support" element={<ProtectedRoute><SupportPage /></ProtectedRoute>} />
         <Route path="/transactions" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Navigate to="/settings/profile" replace /></ProtectedRoute>} />
         <Route path="/settings/profile" element={<ProtectedRoute><SettingsPage mode="profile" /></ProtectedRoute>} />
